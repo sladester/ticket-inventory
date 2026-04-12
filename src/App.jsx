@@ -5,16 +5,18 @@ const SORT_FIELDS = ['Date', 'Who 1', 'Where', 'Event Type', 'Amount']
 const WHO_FIELDS = ['Who 1', 'Who 2', 'Who 3', 'Who 4', 'Who 5']
 const APP_PASSWORD = 'f0r0ur5h0W5!'
 
-function getSetlistUrl(ticket) {
+function getExternalUrl(ticket) {
   const type = ticket['Event Type']?.toLowerCase()
-  if (type !== 'concert') return null
+  const isConcert = type === 'concert'
+  const isWrestling = type === 'wrestling'
+
+  if (!isConcert && !isWrestling) return null
 
   const direct = ticket['Setlist URL']?.trim()
   if (direct) return { href: direct, type: 'direct' }
 
-  const artist = ticket['Who 1']?.trim()
   const date = ticket['Date']?.trim()
-  if (!artist || !date) return null
+  if (!date) return null
 
   const parts = date.split('/')
   if (parts.length !== 3) return null
@@ -22,9 +24,44 @@ function getSetlistUrl(ticket) {
   const day = parts[1].padStart(2, '0')
   const year = parts[2]
 
-  const query = encodeURIComponent(artist)
-  const href = `https://www.setlist.fm/search?query=${query}&year=${year}&month=${month}&day=${day}`
-  return { href, type: 'search' }
+  if (isConcert) {
+    const artist = ticket['Who 1']?.trim()
+    if (!artist) return null
+    const query = encodeURIComponent(artist)
+    const href = `https://www.setlist.fm/search?query=${query}&year=${year}&month=${month}&day=${day}`
+    return { href, type: 'setlist' }
+  }
+
+  if (isWrestling) {
+    return { href: 'https://www.cagematch.net/?id=1&view=results', type: 'cagematch' }
+  }
+
+  return null
+}
+
+function ExternalLink({ ticket }) {
+  const link = getExternalUrl(ticket)
+  if (!link) return null
+
+  const icons = {
+    direct: { emoji: '🎵', title: 'View details' },
+    setlist: { emoji: '🔍', title: 'Search setlist.fm' },
+    cagematch: { emoji: '🤼', title: 'Search Cagematch' },
+  }
+
+  const { emoji, title } = icons[link.type]
+
+  return (
+    <a
+      href={link.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={title}
+      className="text-lg hover:scale-110 transition-transform"
+    >
+      {emoji}
+    </a>
+  )
 }
 
 function PasswordGate({ onUnlock }) {
@@ -127,8 +164,9 @@ export default function App() {
     if (!tickets.length) return null
     let data = [...tickets]
     if (statsFilterType !== 'All') data = data.filter(t => t['Event Type'] === statsFilterType)
-    const artists = {}, venues = {}, years = {}
-    let maxAmount = 0, maxShow = null
+    const artists = {}, venues = {}, years = {}, types = {}
+    const priced = []
+
     data.forEach(t => {
       WHO_FIELDS.forEach(f => {
         const a = t[f]?.trim()
@@ -138,13 +176,20 @@ export default function App() {
       if (v) venues[v] = (venues[v] || 0) + 1
       const y = t['Date']?.split('/')?.[2]?.substring(0,4) || t['Date']?.substring(0,4)
       if (y && y.length === 4) years[y] = (years[y] || 0) + 1
+      const type = t['Event Type']?.trim()
+      if (type) types[type] = (types[type] || 0) + 1
       const amt = parseFloat((t['Amount'] || '').replace(/[$,]/g,'')) || 0
-      if (amt > maxAmount) { maxAmount = amt; maxShow = t }
+      if (amt > 0) priced.push({ amt, ticket: t })
     })
+
+    priced.sort((a, b) => b.amt - a.amt)
+
     const allArtists = Object.entries(artists).sort((a,b) => b[1]-a[1])
     const allVenues = Object.entries(venues).sort((a,b) => b[1]-a[1])
     const allYears = Object.entries(years).sort((a,b) => b[1]-a[1])
-    return { allArtists, allVenues, allYears, maxAmount, maxShow, total: data.length }
+    const allTypes = Object.entries(types).sort((a,b) => b[1]-a[1])
+
+    return { allArtists, allVenues, allYears, allTypes, priced, total: data.length }
   }, [tickets, statsFilterType])
 
   if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
@@ -209,41 +254,28 @@ export default function App() {
             <p className="text-gray-500 text-sm mb-3">Showing {filtered.length} of {tickets.length}</p>
 
             <div className="grid gap-3">
-              {filtered.map((t, i) => {
-                const setlist = getSetlistUrl(t)
-                return (
-                  <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 hover:border-emerald-800 transition-colors">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
-                      <div className="text-emerald-400 text-sm font-mono w-24 shrink-0">{t['Date']}</div>
-                      <div className="flex-1">
-                        <div className="font-semibold text-white">{t['Who 1']}</div>
-                        {(t['Who 2'] || t['Who 3'] || t['Who 4'] || t['Who 5']) && (
-                          <div className="text-gray-400 text-sm">
-                            with {[t['Who 2'],t['Who 3'],t['Who 4'],t['Who 5']].filter(Boolean).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-gray-300 text-sm">{t['Where']}</div>
-                      <div className="flex items-center gap-3">
-                        {t['Amount'] && <div className="text-emerald-300 text-sm font-mono">{t['Amount']}</div>}
-                        <span className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">{t['Event Type']}</span>
-                        {setlist && (
-                          <a
-                            href={setlist.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={setlist.type === 'direct' ? 'View setlist' : 'Search setlist.fm'}
-                            className="text-lg hover:scale-110 transition-transform"
-                          >
-                            {setlist.type === 'direct' ? '🎵' : '🔍'}
-                          </a>
-                        )}
-                      </div>
+              {filtered.map((t, i) => (
+                <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 hover:border-emerald-800 transition-colors">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                    <div className="text-emerald-400 text-sm font-mono w-24 shrink-0">{t['Date']}</div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-white">{t['Who 1']}</div>
+                      {(t['Who 2'] || t['Who 3'] || t['Who 4'] || t['Who 5']) && (
+                        <div className="text-gray-400 text-sm">
+                          with {[t['Who 2'],t['Who 3'],t['Who 4'],t['Who 5']].filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </div>
-                    {t['Notes'] && <div className="text-gray-500 text-xs mt-1 italic">{t['Notes']}</div>}
+                    <div className="text-gray-300 text-sm">{t['Where']}</div>
+                    <div className="flex items-center gap-3">
+                      {t['Amount'] && <div className="text-emerald-300 text-sm font-mono">{t['Amount']}</div>}
+                      <span className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">{t['Event Type']}</span>
+                      <ExternalLink ticket={t} />
+                    </div>
                   </div>
-                )
-              })}
+                  {t['Notes'] && <div className="text-gray-500 text-xs mt-1 italic">{t['Notes']}</div>}
+                </div>
+              ))}
             </div>
           </>
         )}
@@ -289,15 +321,42 @@ export default function App() {
                 valueSuffix=" shows"
               />
 
-              {stats.maxShow && (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                  <h3 className="text-gray-400 text-sm mb-3">💰 Most Expensive Ticket</h3>
-                  <div className="text-white font-semibold">{stats.maxShow['Who 1']}</div>
-                  <div className="text-gray-400 text-sm">{stats.maxShow['Where']}</div>
-                  <div className="text-gray-400 text-sm">{stats.maxShow['Date']}</div>
-                  <div className="text-emerald-400 text-2xl font-bold mt-2">{stats.maxShow['Amount']}</div>
+              <ExpandableList
+                title="🎭 Event Breakdown"
+                items={stats.allTypes}
+                expandKey="types"
+                expanded={expanded}
+                onToggle={toggleExpand}
+                valueSuffix=""
+              />
+
+              {/* Top Ticket Prices */}
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-gray-400 text-sm">💰 Top Ticket Prices</h3>
+                  <button
+                    onClick={() => toggleExpand('prices')}
+                    className="text-emerald-500 text-xs hover:text-emerald-300 transition-colors">
+                    {expanded['prices'] ? '▲ Show less' : `▼ All ${stats.priced.length}`}
+                  </button>
                 </div>
-              )}
+                <div className={expanded['prices'] ? 'max-h-96 overflow-y-auto pr-1' : ''}>
+                  {(expanded['prices'] ? stats.priced : stats.priced.slice(0, 5)).map(({ amt, ticket }, i) => (
+                    <div key={i} className="py-1.5 border-b border-gray-800 last:border-0">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1 mr-2">
+                          <span className="text-gray-600 text-xs mr-2">{i + 1}.</span>
+                          <span className="text-white text-sm">{ticket['Who 1']}</span>
+                          <span className="text-gray-500 text-xs ml-2">{ticket['Event Type']}</span>
+                        </div>
+                        <span className="text-emerald-400 text-sm font-bold shrink-0">{ticket['Amount']}</span>
+                      </div>
+                      <div className="text-gray-600 text-xs ml-4">{ticket['Where']} · {ticket['Date']}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
           </>
         )}
