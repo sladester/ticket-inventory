@@ -3,21 +3,19 @@ import { fetchTickets } from './sheets'
 
 const SORT_FIELDS = ['Date', 'Who 1', 'Where', 'Event Type', 'Amount']
 const WHO_FIELDS = ['Who 1', 'Who 2', 'Who 3', 'Who 4', 'Who 5']
+const APP_PASSWORD = 'f0r0ur5h0W5!'
 
 function getSetlistUrl(ticket) {
   const type = ticket['Event Type']?.toLowerCase()
   if (type !== 'concert') return null
 
-  // If we have a direct URL, use it
   const direct = ticket['Setlist URL']?.trim()
   if (direct) return { href: direct, type: 'direct' }
 
-  // Otherwise build a search URL from artist + date
   const artist = ticket['Who 1']?.trim()
   const date = ticket['Date']?.trim()
   if (!artist || !date) return null
 
-  // Date is M/D/YYYY format
   const parts = date.split('/')
   if (parts.length !== 3) return null
   const month = parts[0].padStart(2, '0')
@@ -29,7 +27,51 @@ function getSetlistUrl(ticket) {
   return { href, type: 'search' }
 }
 
+function PasswordGate({ onUnlock }) {
+  const [input, setInput] = useState('')
+  const [error, setError] = useState(false)
+
+  const handleSubmit = () => {
+    if (input === APP_PASSWORD) {
+      sessionStorage.setItem('ti_auth', '1')
+      onUnlock()
+    } else {
+      setError(true)
+      setInput('')
+      setTimeout(() => setError(false), 2000)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm text-center">
+        <div className="text-5xl mb-4">🎟</div>
+        <h1 className="text-2xl font-bold text-emerald-400 mb-2">Ticket Inventory</h1>
+        <p className="text-gray-500 text-sm mb-6">Enter password to continue</p>
+        <input
+          type="password"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          placeholder="Password"
+          autoFocus
+          className={`w-full bg-gray-800 border rounded px-4 py-3 text-center text-white focus:outline-none mb-4 transition-colors ${
+            error ? 'border-red-500' : 'border-gray-700 focus:border-emerald-500'
+          }`}
+        />
+        {error && <p className="text-red-400 text-sm mb-3">Incorrect password</p>}
+        <button
+          onClick={handleSubmit}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded transition-colors">
+          Enter
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('ti_auth') === '1')
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -44,11 +86,12 @@ export default function App() {
   const toggleExpand = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
 
   useEffect(() => {
+    if (!authed) return
     fetchTickets()
       .then(setTickets)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [authed])
 
   const eventTypes = useMemo(() => {
     const types = [...new Set(tickets.map(t => t['Event Type']).filter(Boolean))]
@@ -103,6 +146,8 @@ export default function App() {
     const allYears = Object.entries(years).sort((a,b) => b[1]-a[1])
     return { allArtists, allVenues, allYears, maxAmount, maxShow, total: data.length }
   }, [tickets, statsFilterType])
+
+  if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
