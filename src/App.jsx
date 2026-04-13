@@ -13,7 +13,9 @@ function getExternalUrl(ticket) {
   if (!isConcert && !isWrestling) return null
 
   const direct = ticket['Setlist URL']?.trim()
-  if (direct) return { href: direct, type: 'direct' }
+  if (direct) {
+    return { href: direct, type: isWrestling ? 'cagematch-direct' : 'direct' }
+  }
 
   const date = ticket['Date']?.trim()
   if (!date) return null
@@ -44,9 +46,10 @@ function ExternalLink({ ticket }) {
   if (!link) return null
 
   const icons = {
-    direct: { emoji: '🎵', title: 'View details' },
-    setlist: { emoji: '🔍', title: 'Search setlist.fm' },
-    cagematch: { emoji: '🤼', title: 'Search Cagematch' },
+    direct:           { emoji: '🎵', title: 'View setlist' },
+    setlist:          { emoji: '🔍', title: 'Search setlist.fm' },
+    cagematch:        { emoji: '🔍', title: 'Search Cagematch' },
+    'cagematch-direct': { emoji: '🤼', title: 'View on Cagematch' },
   }
 
   const { emoji, title } = icons[link.type]
@@ -208,7 +211,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
@@ -330,7 +332,6 @@ export default function App() {
                 valueSuffix=""
               />
 
-              {/* Top Ticket Prices */}
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-gray-400 text-sm">💰 Top Ticket Prices</h3>
