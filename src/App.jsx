@@ -31,32 +31,34 @@ function getExternalUrl(ticket) {
   return null
 }
 
+function parseTags(tagStr) {
+  if (!tagStr) return []
+  return tagStr.trim().split(/\s+/).filter(t => t.startsWith('#'))
+}
+
 function DetailContent({ ticket, onClose }) {
   const link = getExternalUrl(ticket)
   const supporters = WHO_FIELDS.slice(1).map(f => ticket[f]?.trim()).filter(Boolean)
+  const tags = parseTags(ticket['Tags'])
   const linkLabels = {
     direct: { label: '🎵 View Setlist', color: 'bg-emerald-600 hover:bg-emerald-500' },
     setlist: { label: '🔍 Search Setlist.fm', color: 'bg-emerald-600 hover:bg-emerald-500' },
     cagematch: { label: '🤼 Search Cagematch', color: 'bg-red-700 hover:bg-red-600' },
     'cagematch-direct': { label: '🤼 View on Cagematch', color: 'bg-red-700 hover:bg-red-600' },
   }
-
   return (
     <div className="pt-3 pb-1 px-1">
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="text-white font-bold text-lg">{ticket['Who 1']}</div>
           {supporters.length > 0 && (
-            <div className="text-gray-400 text-sm mt-0.5">
-              with {supporters.join(', ')}
-            </div>
+            <div className="text-gray-400 text-sm mt-0.5">with {supporters.join(', ')}</div>
           )}
         </div>
         {onClose && (
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl ml-4">✕</button>
         )}
       </div>
-
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-gray-800 rounded-lg p-3">
           <div className="text-gray-500 text-xs mb-1">Date</div>
@@ -89,21 +91,22 @@ function DetailContent({ ticket, onClose }) {
           </div>
         )}
       </div>
-
+      {tags.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          {tags.map(tag => (
+            <span key={tag} className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full">{tag}</span>
+          ))}
+        </div>
+      )}
       {ticket['Notes'] && (
         <div className="bg-gray-800 rounded-lg p-3 mb-4">
           <div className="text-gray-500 text-xs mb-1">Notes</div>
           <div className="text-gray-300 text-sm italic">{ticket['Notes']}</div>
         </div>
       )}
-
       {link && (
-        <a
-          href={link.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`block w-full text-center text-white font-medium py-3 rounded-lg transition-colors ${linkLabels[link.type].color}`}
-        >
+        <a href={link.href} target="_blank" rel="noopener noreferrer"
+          className={`block w-full text-center text-white font-medium py-3 rounded-lg transition-colors ${linkLabels[link.type].color}`}>
           {linkLabels[link.type].label}
         </a>
       )}
@@ -111,13 +114,11 @@ function DetailContent({ ticket, onClose }) {
   )
 }
 
-// Bottom drawer for mobile
 function MobileDrawer({ ticket, onClose }) {
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
   }, [])
-
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end sm:hidden">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
@@ -148,8 +149,7 @@ function PasswordGate({ onUnlock }) {
         <div className="text-5xl mb-4">🎟</div>
         <h1 className="text-2xl font-bold text-emerald-400 mb-2">Ticket Inventory</h1>
         <p className="text-gray-500 text-sm mb-6">Enter password to continue</p>
-        <input
-          type="password" value={input}
+        <input type="password" value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
           placeholder="Password" autoFocus
@@ -174,8 +174,9 @@ export default function App() {
   const [sortDir, setSortDir] = useState('desc')
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('All')
-  const [statsFilterType, setStatsFilterType] = useState('All')
-  const [view, setView] = useState('list')
+  const [filterTag, setFilterTag] = useState('All')
+  const [statsFilterType, setStatsFilterType] = useState('Concert')
+  const [view, setView] = useState('stats')
   const [expanded, setExpanded] = useState({})
   const [selectedTicket, setSelectedTicket] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
@@ -198,21 +199,53 @@ export default function App() {
     }
   }, [isMobile])
 
-  const handleStatArtistClick = useCallback((artist) => {
-    setSearch(artist)
-    setFilterType('All')
+  const goToList = useCallback((searchTerm, type = 'All') => {
+    setSearch(searchTerm)
+    setFilterType(type)
+    setFilterTag('All')
     setView('list')
     setExpandedRow(null)
     setSelectedTicket(null)
   }, [])
 
-  const handleStatVenueClick = useCallback((venue) => {
-    setSearch(venue)
+  const handleStatArtistClick = useCallback((artist) => goToList(artist), [goToList])
+  const handleStatVenueClick = useCallback((venue) => goToList(venue), [goToList])
+
+  const handleStatYearClick = useCallback((year) => {
+    setSearch(year)
     setFilterType('All')
+    setFilterTag('All')
+    setSortField('Date')
+    setSortDir('asc')
     setView('list')
     setExpandedRow(null)
     setSelectedTicket(null)
   }, [])
+
+  const handleStatTypeClick = useCallback((type) => {
+    setSearch('')
+    setFilterType(type)
+    setFilterTag('All')
+    setView('list')
+    setExpandedRow(null)
+    setSelectedTicket(null)
+  }, [])
+
+  const handlePriceTicketClick = useCallback((ticket) => {
+    setView('list')
+    setSearch(ticket['Who 1'])
+    setFilterType('All')
+    setFilterTag('All')
+    setExpandedRow(null)
+    setSelectedTicket(null)
+    setTimeout(() => {
+      if (isMobile) {
+        setSelectedTicket(ticket)
+      } else {
+        setExpandedRow(ticket)
+      }
+    }, 100)
+  }, [isMobile])
 
   useEffect(() => {
     if (!authed) return
@@ -227,13 +260,20 @@ export default function App() {
     return ['All', ...types.sort()]
   }, [tickets])
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set()
+    tickets.forEach(t => parseTags(t['Tags']).forEach(tag => tagSet.add(tag)))
+    return ['All', ...Array.from(tagSet).sort()]
+  }, [tickets])
+
   const filtered = useMemo(() => {
     let data = [...tickets]
     if (filterType !== 'All') data = data.filter(t => t['Event Type'] === filterType)
+    if (filterTag !== 'All') data = data.filter(t => parseTags(t['Tags']).includes(filterTag))
     if (search) {
       const s = search.toLowerCase()
       data = data.filter(t =>
-        [...WHO_FIELDS, 'Where', 'Event Type'].some(f => t[f]?.toLowerCase().includes(s))
+        [...WHO_FIELDS, 'Where', 'Event Type', 'Date'].some(f => t[f]?.toLowerCase().includes(s))
       )
     }
     data.sort((a, b) => {
@@ -249,7 +289,7 @@ export default function App() {
       return 0
     })
     return data
-  }, [tickets, sortField, sortDir, search, filterType])
+  }, [tickets, sortField, sortDir, search, filterType, filterTag])
 
   const stats = useMemo(() => {
     if (!tickets.length) return null
@@ -290,12 +330,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      {/* Mobile drawer */}
       {selectedTicket && isMobile && (
         <MobileDrawer ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
       )}
 
-      {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
@@ -326,6 +364,10 @@ export default function App() {
               <select value={filterType} onChange={e => setFilterType(e.target.value)}
                 className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
                 {eventTypes.map(t => <option key={t}>{t}</option>)}
+              </select>
+              <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                {allTags.map(t => <option key={t}>{t}</option>)}
               </select>
               <select value={sortField} onChange={e => setSortField(e.target.value)}
                 className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
@@ -363,7 +405,6 @@ export default function App() {
                         <span className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">{t['Event Type']}</span>
                       </div>
                     </div>
-                    {/* Desktop inline expand */}
                     {isExpRow && !isMobile && (
                       <div className="mt-3 border-t border-gray-800">
                         <DetailContent ticket={t} />
@@ -393,7 +434,7 @@ export default function App() {
 
               <ExpandableList
                 title="🎸 Top Artists"
-                subtitle="Click an artist to see all their shows"
+                subtitle="Click to see all their shows"
                 items={stats.allArtists}
                 expandKey="artists"
                 expanded={expanded}
@@ -403,7 +444,7 @@ export default function App() {
 
               <ExpandableList
                 title="🏟 Top Venues"
-                subtitle="Click a venue to see all their shows"
+                subtitle="Click to see all shows at this venue"
                 items={stats.allVenues}
                 expandKey="venues"
                 expanded={expanded}
@@ -413,20 +454,24 @@ export default function App() {
 
               <ExpandableList
                 title="📅 Shows Per Year"
+                subtitle="Click a year to see all shows"
                 items={stats.allYears}
                 expandKey="years"
                 expanded={expanded}
                 onToggle={toggleExpand}
                 valueSuffix=" shows"
+                onItemClick={handleStatYearClick}
               />
 
               <ExpandableList
                 title="🎭 Event Breakdown"
+                subtitle="Click a type to see all shows"
                 items={stats.allTypes}
                 expandKey="types"
                 expanded={expanded}
                 onToggle={toggleExpand}
                 valueSuffix=""
+                onItemClick={handleStatTypeClick}
               />
 
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -437,9 +482,13 @@ export default function App() {
                     {expanded['prices'] ? '▲ Show less' : `▼ All ${stats.priced.length}`}
                   </button>
                 </div>
+                <p className="text-gray-600 text-xs mb-2 italic">Click a show to see details</p>
                 <div className={expanded['prices'] ? 'max-h-96 overflow-y-auto pr-1' : ''}>
                   {(expanded['prices'] ? stats.priced : stats.priced.slice(0, 5)).map(({ amt, ticket }, i) => (
-                    <div key={i} className="py-1.5 border-b border-gray-800 last:border-0">
+                    <div key={i}
+                      className="py-1.5 border-b border-gray-800 last:border-0 cursor-pointer hover:bg-gray-800 rounded px-1 -mx-1 transition-colors"
+                      onClick={() => handlePriceTicketClick(ticket)}
+                    >
                       <div className="flex justify-between items-start">
                         <div className="flex-1 mr-2">
                           <span className="text-gray-600 text-xs mr-2">{i + 1}.</span>
@@ -464,7 +513,6 @@ export default function App() {
 function ExpandableList({ title, subtitle, items, expandKey, expanded, onToggle, valueSuffix = 'x', onItemClick }) {
   const isExpanded = expanded[expandKey]
   const visible = isExpanded ? items : items.slice(0, 5)
-
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
