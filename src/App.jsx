@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fetchTickets } from './sheets'
 
 const SORT_FIELDS = ['Date', 'Who 1', 'Where', 'Event Type', 'Amount']
@@ -9,68 +9,129 @@ function getExternalUrl(ticket) {
   const type = ticket['Event Type']?.toLowerCase()
   const isConcert = type === 'concert'
   const isWrestling = type === 'wrestling'
-
   if (!isConcert && !isWrestling) return null
-
   const direct = ticket['Setlist URL']?.trim()
-  if (direct) {
-    return { href: direct, type: isWrestling ? 'cagematch-direct' : 'direct' }
-  }
-
+  if (direct) return { href: direct, type: isWrestling ? 'cagematch-direct' : 'direct' }
   const date = ticket['Date']?.trim()
   if (!date) return null
-
   const parts = date.split('/')
   if (parts.length !== 3) return null
   const month = parts[0].padStart(2, '0')
   const day = parts[1].padStart(2, '0')
   const year = parts[2]
-
   if (isConcert) {
     const artist = ticket['Who 1']?.trim()
     if (!artist) return null
     const query = encodeURIComponent(artist)
-    const href = `https://www.setlist.fm/search?query=${query}&year=${year}&month=${month}&day=${day}`
-    return { href, type: 'setlist' }
+    return { href: `https://www.setlist.fm/search?query=${query}&year=${year}&month=${month}&day=${day}`, type: 'setlist' }
   }
-
   if (isWrestling) {
     return { href: 'https://www.cagematch.net/?id=1&view=results', type: 'cagematch' }
   }
-
   return null
 }
 
-function ExternalLink({ ticket }) {
+function DetailContent({ ticket, onClose }) {
   const link = getExternalUrl(ticket)
-  if (!link) return null
-
-  const icons = {
-    direct:           { emoji: '🎵', title: 'View setlist' },
-    setlist:          { emoji: '🔍', title: 'Search setlist.fm' },
-    cagematch:        { emoji: '🔍', title: 'Search Cagematch' },
-    'cagematch-direct': { emoji: '🤼', title: 'View on Cagematch' },
+  const supporters = WHO_FIELDS.slice(1).map(f => ticket[f]?.trim()).filter(Boolean)
+  const linkLabels = {
+    direct: { label: '🎵 View Setlist', color: 'bg-emerald-600 hover:bg-emerald-500' },
+    setlist: { label: '🔍 Search Setlist.fm', color: 'bg-emerald-600 hover:bg-emerald-500' },
+    cagematch: { label: '🤼 Search Cagematch', color: 'bg-red-700 hover:bg-red-600' },
+    'cagematch-direct': { label: '🤼 View on Cagematch', color: 'bg-red-700 hover:bg-red-600' },
   }
 
-  const { emoji, title } = icons[link.type]
+  return (
+    <div className="pt-3 pb-1 px-1">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="text-white font-bold text-lg">{ticket['Who 1']}</div>
+          {supporters.length > 0 && (
+            <div className="text-gray-400 text-sm mt-0.5">
+              with {supporters.join(', ')}
+            </div>
+          )}
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl ml-4">✕</button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-gray-800 rounded-lg p-3">
+          <div className="text-gray-500 text-xs mb-1">Date</div>
+          <div className="text-white text-sm">{ticket['Date']}</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-3">
+          <div className="text-gray-500 text-xs mb-1">Type</div>
+          <div className="text-white text-sm">{ticket['Event Type']}</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-3 col-span-2">
+          <div className="text-gray-500 text-xs mb-1">Venue</div>
+          <div className="text-white text-sm">{ticket['Where']}</div>
+        </div>
+        {ticket['Amount'] && (
+          <div className="bg-gray-800 rounded-lg p-3">
+            <div className="text-gray-500 text-xs mb-1">Price</div>
+            <div className="text-emerald-400 text-sm font-bold">{ticket['Amount']}</div>
+          </div>
+        )}
+        {ticket['Section'] && (
+          <div className="bg-gray-800 rounded-lg p-3">
+            <div className="text-gray-500 text-xs mb-1">Section</div>
+            <div className="text-white text-sm">{ticket['Section']}</div>
+          </div>
+        )}
+        {ticket['Admission Type'] && (
+          <div className="bg-gray-800 rounded-lg p-3">
+            <div className="text-gray-500 text-xs mb-1">Admission</div>
+            <div className="text-white text-sm">{ticket['Admission Type']}</div>
+          </div>
+        )}
+      </div>
+
+      {ticket['Notes'] && (
+        <div className="bg-gray-800 rounded-lg p-3 mb-4">
+          <div className="text-gray-500 text-xs mb-1">Notes</div>
+          <div className="text-gray-300 text-sm italic">{ticket['Notes']}</div>
+        </div>
+      )}
+
+      {link && (
+        <a
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`block w-full text-center text-white font-medium py-3 rounded-lg transition-colors ${linkLabels[link.type].color}`}
+        >
+          {linkLabels[link.type].label}
+        </a>
+      )}
+    </div>
+  )
+}
+
+// Bottom drawer for mobile
+function MobileDrawer({ ticket, onClose }) {
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
 
   return (
-    <a
-      href={link.href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={title}
-      className="text-lg hover:scale-110 transition-transform"
-    >
-      {emoji}
-    </a>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:hidden">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-gray-900 border-t border-gray-700 rounded-t-2xl px-4 pb-8 pt-2 max-h-[85vh] overflow-y-auto">
+        <div className="w-12 h-1 bg-gray-600 rounded mx-auto mb-2" />
+        <DetailContent ticket={ticket} onClose={onClose} />
+      </div>
+    </div>
   )
 }
 
 function PasswordGate({ onUnlock }) {
   const [input, setInput] = useState('')
   const [error, setError] = useState(false)
-
   const handleSubmit = () => {
     if (input === APP_PASSWORD) {
       sessionStorage.setItem('ti_auth', '1')
@@ -81,7 +142,6 @@ function PasswordGate({ onUnlock }) {
       setTimeout(() => setError(false), 2000)
     }
   }
-
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm text-center">
@@ -89,19 +149,14 @@ function PasswordGate({ onUnlock }) {
         <h1 className="text-2xl font-bold text-emerald-400 mb-2">Ticket Inventory</h1>
         <p className="text-gray-500 text-sm mb-6">Enter password to continue</p>
         <input
-          type="password"
-          value={input}
+          type="password" value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder="Password"
-          autoFocus
-          className={`w-full bg-gray-800 border rounded px-4 py-3 text-center text-white focus:outline-none mb-4 transition-colors ${
-            error ? 'border-red-500' : 'border-gray-700 focus:border-emerald-500'
-          }`}
+          placeholder="Password" autoFocus
+          className={`w-full bg-gray-800 border rounded px-4 py-3 text-center text-white focus:outline-none mb-4 transition-colors ${error ? 'border-red-500' : 'border-gray-700 focus:border-emerald-500'}`}
         />
         {error && <p className="text-red-400 text-sm mb-3">Incorrect password</p>}
-        <button
-          onClick={handleSubmit}
+        <button onClick={handleSubmit}
           className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded transition-colors">
           Enter
         </button>
@@ -122,8 +177,42 @@ export default function App() {
   const [statsFilterType, setStatsFilterType] = useState('All')
   const [view, setView] = useState('list')
   const [expanded, setExpanded] = useState({})
+  const [selectedTicket, setSelectedTicket] = useState(null)
+  const [expandedRow, setExpandedRow] = useState(null)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const toggleExpand = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
+
+  const handleRowClick = useCallback((ticket) => {
+    if (isMobile) {
+      setSelectedTicket(ticket)
+    } else {
+      setExpandedRow(prev => prev === ticket ? null : ticket)
+    }
+  }, [isMobile])
+
+  const handleStatArtistClick = useCallback((artist) => {
+    setSearch(artist)
+    setFilterType('All')
+    setView('list')
+    setExpandedRow(null)
+    setSelectedTicket(null)
+  }, [])
+
+  const handleStatVenueClick = useCallback((venue) => {
+    setSearch(venue)
+    setFilterType('All')
+    setView('list')
+    setExpandedRow(null)
+    setSelectedTicket(null)
+  }, [])
 
   useEffect(() => {
     if (!authed) return
@@ -150,9 +239,8 @@ export default function App() {
     data.sort((a, b) => {
       let av = a[sortField] || ''
       let bv = b[sortField] || ''
-      if (sortField === 'Date') {
-        av = new Date(av); bv = new Date(bv)
-      } else if (sortField === 'Amount') {
+      if (sortField === 'Date') { av = new Date(av); bv = new Date(bv) }
+      else if (sortField === 'Amount') {
         av = parseFloat(av.replace(/[$,]/g,'')) || 0
         bv = parseFloat(bv.replace(/[$,]/g,'')) || 0
       }
@@ -169,40 +257,31 @@ export default function App() {
     if (statsFilterType !== 'All') data = data.filter(t => t['Event Type'] === statsFilterType)
     const artists = {}, venues = {}, years = {}, types = {}
     const priced = []
-
     data.forEach(t => {
-      WHO_FIELDS.forEach(f => {
-        const a = t[f]?.trim()
-        if (a) artists[a] = (artists[a] || 0) + 1
-      })
-      const v = t['Where']?.trim()
-      if (v) venues[v] = (venues[v] || 0) + 1
+      WHO_FIELDS.forEach(f => { const a = t[f]?.trim(); if (a) artists[a] = (artists[a] || 0) + 1 })
+      const v = t['Where']?.trim(); if (v) venues[v] = (venues[v] || 0) + 1
       const y = t['Date']?.split('/')?.[2]?.substring(0,4) || t['Date']?.substring(0,4)
       if (y && y.length === 4) years[y] = (years[y] || 0) + 1
-      const type = t['Event Type']?.trim()
-      if (type) types[type] = (types[type] || 0) + 1
+      const type = t['Event Type']?.trim(); if (type) types[type] = (types[type] || 0) + 1
       const amt = parseFloat((t['Amount'] || '').replace(/[$,]/g,'')) || 0
       if (amt > 0) priced.push({ amt, ticket: t })
     })
-
     priced.sort((a, b) => b.amt - a.amt)
-
-    const allArtists = Object.entries(artists).sort((a,b) => b[1]-a[1])
-    const allVenues = Object.entries(venues).sort((a,b) => b[1]-a[1])
-    const allYears = Object.entries(years).sort((a,b) => b[1]-a[1])
-    const allTypes = Object.entries(types).sort((a,b) => b[1]-a[1])
-
-    return { allArtists, allVenues, allYears, allTypes, priced, total: data.length }
+    return {
+      allArtists: Object.entries(artists).sort((a,b) => b[1]-a[1]),
+      allVenues: Object.entries(venues).sort((a,b) => b[1]-a[1]),
+      allYears: Object.entries(years).sort((a,b) => b[1]-a[1]),
+      allTypes: Object.entries(types).sort((a,b) => b[1]-a[1]),
+      priced, total: data.length
+    }
   }, [tickets, statsFilterType])
 
   if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
-
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="text-emerald-400 text-xl animate-pulse">Loading your ticket history...</div>
     </div>
   )
-
   if (error) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="text-red-400 text-xl">Error: {error}</div>
@@ -211,6 +290,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
+      {/* Mobile drawer */}
+      {selectedTicket && isMobile && (
+        <MobileDrawer ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+      )}
+
+      {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
@@ -234,8 +319,7 @@ export default function App() {
         {view === 'list' && (
           <>
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <input
-                type="text" placeholder="Search artist, venue..."
+              <input type="text" placeholder="Search artist, venue..."
                 value={search} onChange={e => setSearch(e.target.value)}
                 className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
               />
@@ -253,31 +337,41 @@ export default function App() {
               </button>
             </div>
 
-            <p className="text-gray-500 text-sm mb-3">Showing {filtered.length} of {tickets.length}</p>
+            <p className="text-gray-500 text-sm mb-3">Showing {filtered.length} of {tickets.length} — tap a row for details</p>
 
             <div className="grid gap-3">
-              {filtered.map((t, i) => (
-                <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 hover:border-emerald-800 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
-                    <div className="text-emerald-400 text-sm font-mono w-24 shrink-0">{t['Date']}</div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-white">{t['Who 1']}</div>
-                      {(t['Who 2'] || t['Who 3'] || t['Who 4'] || t['Who 5']) && (
-                        <div className="text-gray-400 text-sm">
-                          with {[t['Who 2'],t['Who 3'],t['Who 4'],t['Who 5']].filter(Boolean).join(', ')}
-                        </div>
-                      )}
+              {filtered.map((t, i) => {
+                const isExpRow = expandedRow === t
+                return (
+                  <div key={i}
+                    className={`bg-gray-900 border rounded-lg px-4 py-3 cursor-pointer transition-colors ${isExpRow ? 'border-emerald-600' : 'border-gray-800 hover:border-emerald-800'}`}
+                    onClick={() => handleRowClick(t)}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                      <div className="text-emerald-400 text-sm font-mono w-24 shrink-0">{t['Date']}</div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-white">{t['Who 1']}</div>
+                        {(t['Who 2'] || t['Who 3'] || t['Who 4'] || t['Who 5']) && (
+                          <div className="text-gray-400 text-sm">
+                            with {[t['Who 2'],t['Who 3'],t['Who 4'],t['Who 5']].filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-gray-300 text-sm">{t['Where']}</div>
+                      <div className="flex items-center gap-3">
+                        {t['Amount'] && <div className="text-emerald-300 text-sm font-mono">{t['Amount']}</div>}
+                        <span className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">{t['Event Type']}</span>
+                      </div>
                     </div>
-                    <div className="text-gray-300 text-sm">{t['Where']}</div>
-                    <div className="flex items-center gap-3">
-                      {t['Amount'] && <div className="text-emerald-300 text-sm font-mono">{t['Amount']}</div>}
-                      <span className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">{t['Event Type']}</span>
-                      <ExternalLink ticket={t} />
-                    </div>
+                    {/* Desktop inline expand */}
+                    {isExpRow && !isMobile && (
+                      <div className="mt-3 border-t border-gray-800">
+                        <DetailContent ticket={t} />
+                      </div>
+                    )}
                   </div>
-                  {t['Notes'] && <div className="text-gray-500 text-xs mt-1 italic">{t['Notes']}</div>}
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}
@@ -299,19 +393,22 @@ export default function App() {
 
               <ExpandableList
                 title="🎸 Top Artists"
-                subtitle="Counts all appearances (headliner + opener)"
+                subtitle="Click an artist to see all their shows"
                 items={stats.allArtists}
                 expandKey="artists"
                 expanded={expanded}
                 onToggle={toggleExpand}
+                onItemClick={handleStatArtistClick}
               />
 
               <ExpandableList
                 title="🏟 Top Venues"
+                subtitle="Click a venue to see all their shows"
                 items={stats.allVenues}
                 expandKey="venues"
                 expanded={expanded}
                 onToggle={toggleExpand}
+                onItemClick={handleStatVenueClick}
               />
 
               <ExpandableList
@@ -335,8 +432,7 @@ export default function App() {
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-gray-400 text-sm">💰 Top Ticket Prices</h3>
-                  <button
-                    onClick={() => toggleExpand('prices')}
+                  <button onClick={() => toggleExpand('prices')}
                     className="text-emerald-500 text-xs hover:text-emerald-300 transition-colors">
                     {expanded['prices'] ? '▲ Show less' : `▼ All ${stats.priced.length}`}
                   </button>
@@ -357,7 +453,6 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
             </div>
           </>
         )}
@@ -366,7 +461,7 @@ export default function App() {
   )
 }
 
-function ExpandableList({ title, subtitle, items, expandKey, expanded, onToggle, valueSuffix = 'x' }) {
+function ExpandableList({ title, subtitle, items, expandKey, expanded, onToggle, valueSuffix = 'x', onItemClick }) {
   const isExpanded = expanded[expandKey]
   const visible = isExpanded ? items : items.slice(0, 5)
 
@@ -374,8 +469,7 @@ function ExpandableList({ title, subtitle, items, expandKey, expanded, onToggle,
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-gray-400 text-sm">{title}</h3>
-        <button
-          onClick={() => onToggle(expandKey)}
+        <button onClick={() => onToggle(expandKey)}
           className="text-emerald-500 text-xs hover:text-emerald-300 transition-colors">
           {isExpanded ? '▲ Show less' : `▼ All ${items.length}`}
         </button>
@@ -383,14 +477,16 @@ function ExpandableList({ title, subtitle, items, expandKey, expanded, onToggle,
       {subtitle && <p className="text-gray-600 text-xs mb-2 italic">{subtitle}</p>}
       <div className={isExpanded ? 'max-h-96 overflow-y-auto pr-1' : ''}>
         {visible.map(([name, count], i) => (
-          <div key={name} className="flex justify-between py-1 border-b border-gray-800 last:border-0">
+          <div key={name}
+            className={`flex justify-between py-1 border-b border-gray-800 last:border-0 ${onItemClick ? 'cursor-pointer hover:bg-gray-800 rounded px-1 -mx-1 transition-colors' : ''}`}
+            onClick={() => onItemClick?.(name)}
+          >
             <span className="text-white text-sm">
               <span className="text-gray-600 text-xs mr-2">{i + 1}.</span>
               {name}
+              {onItemClick && <span className="text-gray-600 text-xs ml-1">↗</span>}
             </span>
-            <span className="text-emerald-400 text-sm font-bold shrink-0 ml-2">
-              {count}{valueSuffix}
-            </span>
+            <span className="text-emerald-400 text-sm font-bold shrink-0 ml-2">{count}{valueSuffix}</span>
           </div>
         ))}
       </div>
