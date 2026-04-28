@@ -2,18 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Ticket Inventory</title>
-    <link rel="icon" type="image/svg+xml" href="/ticket-inventory/icons/icon-192.png" />
-    <link rel="manifest" href="/ticket-inventory/manifest.json">
-    <meta name="theme-color" content="#10b981">
-    <link rel="apple-touch-icon" href="/ticket-inventory/icons/icon-192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Tickets">
-    <script type="module" crossorigin src="/ticket-inventory/assets/index-B42U-uKM.js"></script>
+
+    <!-- Favicon / icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/ticket-inventory/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/ticket-inventory/icons/icon-512.png" />
+
+    <!-- Theme color (manifest is auto-injected by vite-plugin-pwa at build time) -->
+    <meta name="theme-color" content="#10b981" />
+
+    <!-- iOS PWA support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tickets" />
+    <link rel="apple-touch-icon" href="/ticket-inventory/icons/icon-192.png" />
+    <script type="module" crossorigin src="/ticket-inventory/assets/index-BTUf-_65.js"></script>
     <link rel="stylesheet" crossorigin href="/ticket-inventory/assets/index-Du8ZLin9.css">
-  </head>
+  <link rel="manifest" href="/ticket-inventory/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/ticket-inventory/registerSW.js"></script></head>
   <body>
     <div id="root"></div>
   </body>
