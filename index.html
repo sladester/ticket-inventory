@@ -2,15 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Ticket Inventory</title>
-    <link rel="icon" type="image/svg+xml" href="/ticket-inventory/icons/icon-192.png" />
-    <link rel="manifest" href="/ticket-inventory/manifest.json">
-    <meta name="theme-color" content="#10b981">
-    <link rel="apple-touch-icon" href="/ticket-inventory/icons/icon-192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Tickets">
+
+    <!-- Favicon / icons -->
+    <link rel="icon" type="image/png" href="/ticket-inventory/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/ticket-inventory/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/ticket-inventory/icons/icon-512.png" />
+
+    <!-- Theme color (manifest is auto-injected by vite-plugin-pwa at build time) -->
+    <meta name="theme-color" content="#10b981" />
+
+    <!-- iOS PWA support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tickets" />
+    <link rel="apple-touch-icon" href="/ticket-inventory/icons/icon-192.png" />
   </head>
   <body>
     <div id="root"></div>
