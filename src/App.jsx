@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fetchTickets } from './sheets'
+import { TENANTS, findTenant, getStoredTenantId, storeTenantId } from './tenants'
 
 const SORT_FIELDS = ['Date', 'Who 1', 'Where', 'Event Type', 'Amount']
 const WHO_FIELDS = ['Who 1', 'Who 2', 'Who 3', 'Who 4', 'Who 5']
-const APP_PASSWORD = 'f0r0ur5h0W5!'
 
 function getExternalUrl(ticket) {
   const type = ticket['Event Type']?.toLowerCase()
@@ -132,17 +132,29 @@ function MobileDrawer({ ticket, onClose }) {
 
 function PasswordGate({ onUnlock }) {
   const [input, setInput] = useState('')
-  const [error, setError] = useState(false)
-  const handleSubmit = () => {
-    if (input === APP_PASSWORD) {
-      sessionStorage.setItem('ti_auth', '1')
-      onUnlock()
-    } else {
-      setError(true)
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  const handleSubmit = async () => {
+    if (checking || !input) return
+    setChecking(true)
+    try {
+      const tenantId = await findTenant(input)
+      if (tenantId) {
+        storeTenantId(tenantId)
+        onUnlock(tenantId)
+        return
+      }
+      setChecking(false)
+      setError('Incorrect password')
       setInput('')
-      setTimeout(() => setError(false), 2000)
+      setTimeout(() => setError(''), 2000)
+    } catch (e) {
+      setChecking(false)
+      setError(e.message)
     }
   }
+
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm text-center">
@@ -155,10 +167,10 @@ function PasswordGate({ onUnlock }) {
           placeholder="Password" autoFocus
           className={`w-full bg-gray-800 border rounded px-4 py-3 text-center text-white focus:outline-none mb-4 transition-colors ${error ? 'border-red-500' : 'border-gray-700 focus:border-emerald-500'}`}
         />
-        {error && <p className="text-red-400 text-sm mb-3">Incorrect password</p>}
-        <button onClick={handleSubmit}
-          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded transition-colors">
-          Enter
+        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+        <button onClick={handleSubmit} disabled={checking}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-white font-medium py-3 rounded transition-colors">
+          {checking ? 'Checking…' : 'Enter'}
         </button>
       </div>
     </div>
@@ -166,7 +178,7 @@ function PasswordGate({ onUnlock }) {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('ti_auth') === '1')
+  const [tenantId, setTenantId] = useState(() => getStoredTenantId())
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -181,6 +193,8 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
+
+  const tenant = tenantId ? TENANTS[tenantId] : null
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 640)
@@ -248,12 +262,15 @@ export default function App() {
   }, [isMobile])
 
   useEffect(() => {
-    if (!authed) return
-    fetchTickets()
+    if (!tenantId) return
+    const sheetId = TENANTS[tenantId].sheetId
+    setLoading(true)
+    setError(null)
+    fetchTickets(sheetId)
       .then(setTickets)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [authed])
+  }, [tenantId])
 
   const eventTypes = useMemo(() => {
     const types = [...new Set(tickets.map(t => t['Event Type']).filter(Boolean))]
@@ -316,17 +333,19 @@ export default function App() {
     }
   }, [tickets, statsFilterType])
 
-  if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
+  if (!tenant) return <PasswordGate onUnlock={setTenantId} />
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="text-emerald-400 text-xl animate-pulse">Loading your ticket history...</div>
     </div>
   )
   if (error) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="text-red-400 text-xl">Error: {error}</div>
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+      <div className="text-red-400 text-xl text-center">Error: {error}</div>
     </div>
   )
+
+  const isEmpty = tickets.length === 0
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -337,24 +356,36 @@ export default function App() {
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-emerald-400">🎟 Ticket Inventory</h1>
+            <h1 className="text-2xl font-bold text-emerald-400">🎟 {tenant.title}</h1>
             <p className="text-gray-400 text-sm">{tickets.length} events tracked</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setView('list')}
-              className={`px-3 py-1.5 rounded text-sm font-medium ${view==='list' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
-              List
-            </button>
-            <button onClick={() => setView('stats')}
-              className={`px-3 py-1.5 rounded text-sm font-medium ${view==='stats' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
-              Stats
-            </button>
-          </div>
+          {!isEmpty && (
+            <div className="flex gap-2">
+              <button onClick={() => setView('list')}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${view==='list' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
+                List
+              </button>
+              <button onClick={() => setView('stats')}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${view==='stats' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
+                Stats
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {view === 'list' && (
+        {isEmpty && (
+          <div className="text-center py-20">
+            <div className="text-6xl mb-4">🎟</div>
+            <h2 className="text-xl font-bold text-white mb-2">No events yet</h2>
+            <p className="text-gray-400 text-sm max-w-sm mx-auto">
+              Add rows to the Google Sheet and they'll appear here the next time you open the app.
+            </p>
+          </div>
+        )}
+
+        {!isEmpty && view === 'list' && (
           <>
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
               <input type="text" placeholder="Search artist, venue..."
@@ -417,7 +448,7 @@ export default function App() {
           </>
         )}
 
-        {view === 'stats' && stats && (
+        {!isEmpty && view === 'stats' && stats && (
           <>
             <div className="flex gap-3 mb-6">
               <select value={statsFilterType} onChange={e => setStatsFilterType(e.target.value)}
