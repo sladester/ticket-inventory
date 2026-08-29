@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fetchTickets } from './sheets'
 import { TENANTS, findTenant, getStoredTenantId, storeTenantId } from './tenants'
+import TicketForm from './TicketForm'
 
 const SORT_FIELDS = ['Date', 'Who 1', 'Where', 'Event Type', 'Amount']
 const WHO_FIELDS = ['Who 1', 'Who 2', 'Who 3', 'Who 4', 'Who 5']
@@ -36,7 +37,7 @@ function parseTags(tagStr) {
   return tagStr.trim().split(/\s+/).filter(t => t.startsWith('#'))
 }
 
-function DetailContent({ ticket, onClose }) {
+function DetailContent({ ticket, onClose, onEdit }) {
   const link = getExternalUrl(ticket)
   const supporters = WHO_FIELDS.slice(1).map(f => ticket[f]?.trim()).filter(Boolean)
   const tags = parseTags(ticket['Tags'])
@@ -78,10 +79,10 @@ function DetailContent({ ticket, onClose }) {
             <div className="text-emerald-400 text-sm font-bold">{ticket['Amount']}</div>
           </div>
         )}
-        {ticket['Section'] && (
+        {ticket['Section-Row-Seat'] && (
           <div className="bg-gray-800 rounded-lg p-3">
-            <div className="text-gray-500 text-xs mb-1">Section</div>
-            <div className="text-white text-sm">{ticket['Section']}</div>
+            <div className="text-gray-500 text-xs mb-1">Section-Row-Seat</div>
+            <div className="text-white text-sm">{ticket['Section-Row-Seat']}</div>
           </div>
         )}
         {ticket['Admission Type'] && (
@@ -104,17 +105,27 @@ function DetailContent({ ticket, onClose }) {
           <div className="text-gray-300 text-sm italic">{ticket['Notes']}</div>
         </div>
       )}
-      {link && (
-        <a href={link.href} target="_blank" rel="noopener noreferrer"
-          className={`block w-full text-center text-white font-medium py-3 rounded-lg transition-colors ${linkLabels[link.type].color}`}>
-          {linkLabels[link.type].label}
-        </a>
-      )}
+      <div className="flex gap-2">
+        {onEdit && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(ticket) }}
+            className="shrink-0 px-4 text-center text-gray-200 font-medium py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors">
+            ✏️ Edit
+          </button>
+        )}
+        {link && (
+          <a href={link.href} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={`flex-1 block text-center text-white font-medium py-3 rounded-lg transition-colors ${linkLabels[link.type].color}`}>
+            {linkLabels[link.type].label}
+          </a>
+        )}
+      </div>
     </div>
   )
 }
 
-function MobileDrawer({ ticket, onClose }) {
+function MobileDrawer({ ticket, onClose, onEdit }) {
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
@@ -124,7 +135,7 @@ function MobileDrawer({ ticket, onClose }) {
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative bg-gray-900 border-t border-gray-700 rounded-t-2xl px-4 pb-8 pt-2 max-h-[85vh] overflow-y-auto">
         <div className="w-12 h-1 bg-gray-600 rounded mx-auto mb-2" />
-        <DetailContent ticket={ticket} onClose={onClose} />
+        <DetailContent ticket={ticket} onClose={onClose} onEdit={onEdit} />
       </div>
     </div>
   )
@@ -182,6 +193,7 @@ export default function App() {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [sortField, setSortField] = useState('Date')
   const [sortDir, setSortDir] = useState('desc')
   const [search, setSearch] = useState('')
@@ -193,6 +205,8 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [formMode, setFormMode] = useState(null)      // 'add' | 'edit' | null
+  const [formTicket, setFormTicket] = useState(null)
 
   const tenant = tenantId ? TENANTS[tenantId] : null
 
@@ -212,6 +226,24 @@ export default function App() {
       setExpandedRow(prev => prev === ticket ? null : ticket)
     }
   }, [isMobile])
+
+  const handleEdit = useCallback((ticket) => {
+    setFormTicket(ticket)
+    setFormMode('edit')
+  }, [])
+
+  const handleAdd = useCallback(() => {
+    setFormTicket(null)
+    setFormMode('add')
+  }, [])
+
+  const handleSaved = useCallback(() => {
+    setFormMode(null)
+    setFormTicket(null)
+    setSelectedTicket(null)
+    setExpandedRow(null)
+    setReloadKey(k => k + 1)
+  }, [])
 
   const goToList = useCallback((searchTerm, type = 'All') => {
     setSearch(searchTerm)
@@ -270,12 +302,32 @@ export default function App() {
       .then(setTickets)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [tenantId])
+  }, [tenantId, reloadKey])
 
-  const eventTypes = useMemo(() => {
-    const types = [...new Set(tickets.map(t => t['Event Type']).filter(Boolean))]
-    return ['All', ...types.sort()]
+  // Distinct values pulled from the loaded data, used to populate the form's
+  // dropdown and datalist suggestions.
+  const knownTypes = useMemo(
+    () => [...new Set(tickets.map(t => t['Event Type']).filter(Boolean))].sort(),
+    [tickets]
+  )
+  const knownVenues = useMemo(
+    () => [...new Set(tickets.map(t => t['Where']).filter(Boolean))].sort(),
+    [tickets]
+  )
+  const knownAdmissions = useMemo(
+    () => [...new Set(tickets.map(t => t['Admission Type']).filter(Boolean))].sort(),
+    [tickets]
+  )
+  const knownArtists = useMemo(() => {
+    const set = new Set()
+    tickets.forEach(t => WHO_FIELDS.forEach(f => {
+      const v = t[f]?.trim()
+      if (v) set.add(v)
+    }))
+    return [...set].sort()
   }, [tickets])
+
+  const eventTypes = useMemo(() => ['All', ...knownTypes], [knownTypes])
 
   const allTags = useMemo(() => {
     const tagSet = new Set()
@@ -350,7 +402,25 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {selectedTicket && isMobile && (
-        <MobileDrawer ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+        <MobileDrawer
+          ticket={selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onEdit={handleEdit}
+        />
+      )}
+
+      {formMode && (
+        <TicketForm
+          mode={formMode}
+          ticket={formTicket}
+          tenantId={tenantId}
+          knownTypes={knownTypes}
+          knownVenues={knownVenues}
+          knownArtists={knownArtists}
+          knownAdmissions={knownAdmissions}
+          onClose={() => { setFormMode(null); setFormTicket(null) }}
+          onSaved={handleSaved}
+        />
       )}
 
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-4 sticky top-0 z-10">
@@ -359,18 +429,24 @@ export default function App() {
             <h1 className="text-2xl font-bold text-emerald-400">🎟 {tenant.title}</h1>
             <p className="text-gray-400 text-sm">{tickets.length} events tracked</p>
           </div>
-          {!isEmpty && (
-            <div className="flex gap-2">
-              <button onClick={() => setView('list')}
-                className={`px-3 py-1.5 rounded text-sm font-medium ${view==='list' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
-                List
-              </button>
-              <button onClick={() => setView('stats')}
-                className={`px-3 py-1.5 rounded text-sm font-medium ${view==='stats' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
-                Stats
-              </button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            {!isEmpty && (
+              <>
+                <button onClick={() => setView('list')}
+                  className={`px-3 py-1.5 rounded text-sm font-medium ${view==='list' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
+                  List
+                </button>
+                <button onClick={() => setView('stats')}
+                  className={`px-3 py-1.5 rounded text-sm font-medium ${view==='stats' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
+                  Stats
+                </button>
+              </>
+            )}
+            <button onClick={handleAdd}
+              className="px-3 py-1.5 rounded text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white">
+              + Add
+            </button>
+          </div>
         </div>
       </div>
 
@@ -379,9 +455,13 @@ export default function App() {
           <div className="text-center py-20">
             <div className="text-6xl mb-4">🎟</div>
             <h2 className="text-xl font-bold text-white mb-2">No events yet</h2>
-            <p className="text-gray-400 text-sm max-w-sm mx-auto">
-              Add rows to the Google Sheet and they'll appear here the next time you open the app.
+            <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">
+              Add your first event and it'll show up here.
             </p>
+            <button onClick={handleAdd}
+              className="px-5 py-3 rounded-lg font-medium bg-emerald-600 hover:bg-emerald-500 text-white">
+              + Add an event
+            </button>
           </div>
         )}
 
@@ -416,7 +496,7 @@ export default function App() {
               {filtered.map((t, i) => {
                 const isExpRow = expandedRow === t
                 return (
-                  <div key={i}
+                  <div key={t._row ?? i}
                     className={`bg-gray-900 border rounded-lg px-4 py-3 cursor-pointer transition-colors ${isExpRow ? 'border-emerald-600' : 'border-gray-800 hover:border-emerald-800'}`}
                     onClick={() => handleRowClick(t)}
                   >
@@ -438,7 +518,7 @@ export default function App() {
                     </div>
                     {isExpRow && !isMobile && (
                       <div className="mt-3 border-t border-gray-800">
-                        <DetailContent ticket={t} />
+                        <DetailContent ticket={t} onEdit={handleEdit} />
                       </div>
                     )}
                   </div>
